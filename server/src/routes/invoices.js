@@ -93,6 +93,19 @@ router.post('/', authenticateToken, async (req, res) => {
 
         // Insert invoice items
         for (const item of items) {
+            // Lock the product row and verify stock is sufficient
+            const [prodRows] = await connection.query('SELECT stock_qty FROM products WHERE id = ? FOR UPDATE', [item.id]);
+            if (!prodRows || prodRows.length === 0) {
+                throw new Error(`Product not found: ${item.id}`);
+            }
+
+            const currentStock = parseInt(prodRows[0].stock_qty, 10) || 0;
+            if (currentStock < item.quantity) {
+                // Insufficient stock - rollback and return error
+                await connection.rollback();
+                return res.status(400).json({ error: `Insufficient stock for product ${item.name} (id: ${item.id}). Available: ${currentStock}, requested: ${item.quantity}` });
+            }
+
             await connection.query(
                 `INSERT INTO invoice_items (invoice_id, product_id, product_name, quantity, 
                                      unit_price, applied_tax_percent, applied_discount_percent, line_total) 
@@ -103,7 +116,7 @@ router.post('/', authenticateToken, async (req, res) => {
                 ]
             );
 
-            // Update product stock
+            // Update product stock (safe because we locked the row above)
             await connection.query(
                 'UPDATE products SET stock_qty = stock_qty - ? WHERE id = ?',
                 [item.quantity, item.id]

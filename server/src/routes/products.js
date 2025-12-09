@@ -103,9 +103,21 @@ router.patch('/:id/stock', authenticateToken, async (req, res) => {
             return res.status(400).json({ error: 'Stock delta is required' });
         }
 
+        // Fetch current stock and ensure we won't go negative
+        const [rows] = await db.query('SELECT stock_qty FROM products WHERE id = ?', [req.params.id]);
+        if (!rows || rows.length === 0) {
+            return res.status(404).json({ error: 'Product not found' });
+        }
+
+        const currentStock = parseInt(rows[0].stock_qty, 10) || 0;
+        const newStock = currentStock + Number(delta);
+        if (newStock < 0) {
+            return res.status(400).json({ error: `Insufficient stock. Current: ${currentStock}, requested change: ${delta}` });
+        }
+
         const [result] = await db.query(
-            'UPDATE products SET stock_qty = stock_qty + ? WHERE id = ?',
-            [delta, req.params.id]
+            'UPDATE products SET stock_qty = ? WHERE id = ?',
+            [newStock, req.params.id]
         );
 
         if (result.affectedRows === 0) {

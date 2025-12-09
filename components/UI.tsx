@@ -83,3 +83,32 @@ export const Badge: React.FC<{ children: React.ReactNode; color?: 'green' | 'blu
     </span>
   );
 };
+
+// ---------------- Tabs Component ----------------
+
+// UI.tsx — Replace your entire Tabs component with this fixed version:
+export const Tabs: React.FC<{
+  tabs: { id: string; label: string; icon?: React.ComponentType<any> }[];
+  activeTab: string;
+  onTabChange: (id: string) => void;
+  className?: string;
+}> = ({ tabs, activeTab, onTabChange, className = '' }) => {
+  return (
+    <div className={`flex gap-1 border-b border-slate-200 overflow-x-auto ${className}`}>
+      {tabs.map(tab => (
+        <button
+          key={tab.id}
+          onClick={() => onTabChange(tab.id)}
+          className={`flex items-center gap-2 px- px-4 py-3 text-sm font-medium whitespace-nowrap transition-all border-b-2 -mb-px
+            ${activeTab === tab.id
+              ? 'text-indigo-600 border-indigo-600'
+              : 'text-slate-500 hover:text-slate-700 border-transparent'
+            }`}
+        >
+          {tab.icon && <tab.icon size={19} />}
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+};

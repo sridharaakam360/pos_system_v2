@@ -113,6 +113,60 @@ CREATE TABLE invoice_items (
     INDEX idx_product_id (product_id)
 ) ENGINE=InnoDB;
 
+-- Business Partnerships Table (Equity/Investment Partners)
+CREATE TABLE partnerships (
+    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    store_id VARCHAR(36) NOT NULL,
+    partner_name VARCHAR(150) NOT NULL,
+    email VARCHAR(100),
+    phone_number VARCHAR(20),
+    cash_investment DECIMAL(12,2) NOT NULL DEFAULT 0,
+    investment_date DATE NOT NULL,
+    ownership_percentage DECIMAL(5,2) NOT NULL,
+    address TEXT,
+    bank_details TEXT,
+    notes TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE,
+    INDEX idx_store_id (store_id),
+    INDEX idx_is_active (is_active)
+) ENGINE=InnoDB;
+
+-- Partnership Assets Table (Equipment, Property, Inventory contributed)
+CREATE TABLE partnership_assets (
+    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    partnership_id VARCHAR(36) NOT NULL,
+    asset_name VARCHAR(200) NOT NULL,
+    asset_description TEXT,
+    asset_value DECIMAL(12,2) NOT NULL,
+    asset_type ENUM('EQUIPMENT', 'PROPERTY', 'INVENTORY', 'VEHICLE', 'OTHER') DEFAULT 'OTHER',
+    contributed_date DATE NOT NULL,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (partnership_id) REFERENCES partnerships(id) ON DELETE CASCADE,
+    INDEX idx_partnership_id (partnership_id),
+    INDEX idx_asset_type (asset_type)
+) ENGINE=InnoDB;
+
+-- Expenses Table (for store-level financial tracking)
+CREATE TABLE expenses (
+    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    store_id VARCHAR(36) NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    amount DECIMAL(12,2) NOT NULL,
+    expense_date DATE NOT NULL,
+    category VARCHAR(100),
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE,
+    INDEX idx_store_id (store_id),
+    INDEX idx_expense_date (expense_date)
+);
+
 -- Add foreign key constraint for users.store_id
 ALTER TABLE users ADD CONSTRAINT fk_users_store 
     FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE SET NULL;

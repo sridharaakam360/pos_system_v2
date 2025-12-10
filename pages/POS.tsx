@@ -241,8 +241,11 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
       setLastInvoice(fullInvoice);
       onSaveInvoice(fullInvoice);
 
-      // Deduct stock locally
-      cart.forEach(item => onUpdateProductStock(item.id, -item.quantity));
+      // Stock is already deducted on the server during invoice creation
+      // Refresh product data to get updated stock levels
+      if (onRefreshData) {
+        onRefreshData();
+      }
 
       setCart([]);
       setShowPaymentModal(false);

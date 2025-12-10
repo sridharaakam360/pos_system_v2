@@ -1,8 +1,19 @@
--- POS System Database Schema
+-- ============================================================================
+-- POS System - Complete Database Schema
+-- ============================================================================
+-- Version: 2.0
+-- Last Updated: 2025-12-10
+-- Includes: All tables, indexes, constraints, and sample data
+-- ============================================================================
+
 -- Drop existing database if exists and create fresh
 DROP DATABASE IF EXISTS pos_system;
 CREATE DATABASE pos_system CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE pos_system;
+
+-- ============================================================================
+-- CORE TABLES
+-- ============================================================================
 
 -- Users Table
 CREATE TABLE users (
@@ -55,7 +66,7 @@ CREATE TABLE categories (
     INDEX idx_store_id (store_id)
 ) ENGINE=InnoDB;
 
--- Products Table
+-- Products Table (with cost_price for profit tracking)
 CREATE TABLE products (
     id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
     store_id VARCHAR(36) NOT NULL,
@@ -66,6 +77,7 @@ CREATE TABLE products (
     tax_override DECIMAL(5,2) NULL,
     sku VARCHAR(50),
     image_url TEXT,
+    cost_price DECIMAL(10,2) DEFAULT 0,  -- Added for profit calculation
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE,
@@ -80,7 +92,7 @@ CREATE TABLE invoices (
     id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
     invoice_number VARCHAR(50) UNIQUE NOT NULL,
     store_id VARCHAR(36) NOT NULL,
-    date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    date DATETIME DEFAULT CURRENT_TIMESTAMP,  -- Changed to DATETIME for better precision
     subtotal DECIMAL(10,2) NOT NULL,
     tax_total DECIMAL(10,2) NOT NULL,
     discount_total DECIMAL(10,2) NOT NULL,
@@ -92,7 +104,8 @@ CREATE TABLE invoices (
     FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE,
     INDEX idx_store_id (store_id),
     INDEX idx_invoice_number (invoice_number),
-    INDEX idx_date (date)
+    INDEX idx_date (date),
+    INDEX idx_store_date (store_id, date)  -- Composite index for date range queries
 ) ENGINE=InnoDB;
 
 -- Invoice Items Table
@@ -112,6 +125,10 @@ CREATE TABLE invoice_items (
     INDEX idx_invoice_id (invoice_id),
     INDEX idx_product_id (product_id)
 ) ENGINE=InnoDB;
+
+-- ============================================================================
+-- PARTNERSHIP & FINANCIAL TABLES
+-- ============================================================================
 
 -- Business Partnerships Table (Equity/Investment Partners)
 CREATE TABLE partnerships (
@@ -164,17 +181,21 @@ CREATE TABLE expenses (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE,
     INDEX idx_store_id (store_id),
-    INDEX idx_expense_date (expense_date)
-);
+    INDEX idx_expense_date (expense_date),
+    INDEX idx_store_date (store_id, expense_date)  -- Composite index for date range queries
+) ENGINE=InnoDB;
+
+-- ============================================================================
+-- FOREIGN KEY CONSTRAINTS
+-- ============================================================================
 
 -- Add foreign key constraint for users.store_id
 ALTER TABLE users ADD CONSTRAINT fk_users_store 
     FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE SET NULL;
 
-
-ALTER TABLE invoices 
-MODIFY COLUMN date DATETIME DEFAULT CURRENT_TIMESTAMP;
-
+-- ============================================================================
+-- SAMPLE DATA
+-- ============================================================================
 
 -- Insert default admin user (password: admin123)
 INSERT INTO users (id, username, password_hash, role, display_name) VALUES 
@@ -188,7 +209,33 @@ INSERT INTO stores (id, name, owner_name, currency, address, is_active) VALUES
 INSERT INTO categories (id, store_id, name, default_gst) VALUES 
 ('cat-001', 'store-001', 'General', 18.0);
 
--- Insert sample products
-INSERT INTO products (id, store_id, category_id, name, price, stock_qty, sku) VALUES 
-('prod-001', 'store-001', 'cat-001', 'Sample Product 1', 100.00, 50, 'SKU001'),
-('prod-002', 'store-001', 'cat-001', 'Sample Product 2', 200.00, 30, 'SKU002');
+-- Insert sample products (with cost_price for profit tracking)
+INSERT INTO products (id, store_id, category_id, name, price, stock_qty, sku, cost_price) VALUES 
+('prod-001', 'store-001', 'cat-001', 'Sample Product 1', 100.00, 50, 'SKU001', 60.00),
+('prod-002', 'store-001', 'cat-001', 'Sample Product 2', 200.00, 30, 'SKU002', 120.00);
+
+-- ============================================================================
+-- PERFORMANCE OPTIMIZATION
+-- ============================================================================
+-- Note: Most indexes are already created inline with table definitions above
+-- The following are additional composite indexes for specific query patterns
+
+-- Additional composite indexes for financial reports
+CREATE INDEX idx_invoices_payment_method ON invoices(payment_method);
+CREATE INDEX idx_categories_name ON categories(name);
+CREATE INDEX idx_products_name ON products(name);
+
+-- ============================================================================
+-- DATABASE SCHEMA COMPLETE
+-- ============================================================================
+-- Total Tables: 9
+-- Total Indexes: 25+
+-- Features:
+--   ✓ UUID primary keys
+--   ✓ Proper foreign key constraints
+--   ✓ Cascading deletes where appropriate
+--   ✓ Composite indexes for performance
+--   ✓ Cost price tracking for profit calculations
+--   ✓ Timestamp tracking (created_at, updated_at)
+--   ✓ Sample data for testing
+-- ============================================================================

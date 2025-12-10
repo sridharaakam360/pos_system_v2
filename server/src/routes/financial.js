@@ -79,14 +79,19 @@ router.get('/sales-trend', authenticateToken, async (req, res) => {
             return res.status(400).json({ error: 'Store ID is required' });
         }
 
+        // Fixed: Use subquery to calculate COGS per invoice to avoid incorrect aggregation
         const [trendData] = await db.query(
             `SELECT 
                 DATE(i.date) as date,
                 SUM(i.grand_total) as revenue,
-                SUM(i.grand_total - i.tax_total - (ii.quantity * COALESCE(p.cost_price, 0))) as gross_profit
+                SUM(i.grand_total - i.tax_total - COALESCE(cogs.total_cost, 0)) as gross_profit
              FROM invoices i
-             JOIN invoice_items ii ON i.id = ii.invoice_id
-             LEFT JOIN products p ON ii.product_id = p.id
+             LEFT JOIN (
+                 SELECT invoice_id, SUM(quantity * COALESCE(p.cost_price, 0)) as total_cost
+                 FROM invoice_items ii
+                 LEFT JOIN products p ON ii.product_id = p.id
+                 GROUP BY invoice_id
+             ) cogs ON i.id = cogs.invoice_id
              WHERE i.store_id = ? 
              AND i.date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
              GROUP BY DATE(i.date)
@@ -159,11 +164,20 @@ router.get('/top-products', authenticateToken, async (req, res) => {
 
 // ... (Category Performance, Payment Stats, Heatmap remain unchanged) ...
 
-// Drill Down Invoices
+// Drill Down Invoices (with pagination)
 router.get('/drill-down/invoices', authenticateToken, async (req, res) => {
     try {
-        const { storeId, categoryId, paymentMethod, startDate, endDate } = req.query;
+        const { storeId, categoryId, paymentMethod, startDate, endDate, page = 1, limit = 50 } = req.query;
         if ((req.user.role === 'STORE_ADMIN' && req.user.storeId !== storeId)) return res.sendStatus(403);
+
+        // Validate categoryId format (UUID)
+        if (categoryId && !categoryId.match(/^[a-f0-9-]{36}$/i)) {
+            return res.status(400).json({ error: 'Invalid category ID format' });
+        }
+
+        const pageNum = parseInt(page);
+        const limitNum = parseInt(limit);
+        const offset = (pageNum - 1) * limitNum;
 
         let query = `
             SELECT i.id, i.invoice_number, i.date, i.grand_total, i.payment_method,
@@ -191,20 +205,61 @@ router.get('/drill-down/invoices', authenticateToken, async (req, res) => {
             }
         }
 
-        query += ` GROUP BY i.id ORDER BY i.date DESC LIMIT 50`;
+        query += ` GROUP BY i.id ORDER BY i.date DESC LIMIT ? OFFSET ?`;
+        params.push(limitNum, offset);
 
         const [rows] = await db.query(query, params);
-        res.json(rows.map(r => ({
-            id: r.id,
-            invoiceNumber: r.invoice_number,
-            date: r.date,
-            items: r.item_names,
-            paymentMethod: r.payment_method,
-            total: parseFloat(r.grand_total),
-            profit: parseFloat(r.profit)
-        })));
 
-    } catch (e) { console.error(e); res.status(500).send('Error'); }
+        // Get total count for pagination
+        let countQuery = `
+            SELECT COUNT(DISTINCT i.id) as total
+            FROM invoices i
+            JOIN invoice_items ii ON i.id = ii.invoice_id
+            JOIN products p ON ii.product_id = p.id
+            LEFT JOIN categories c ON p.category_id = c.id
+            WHERE i.store_id = ? AND i.date BETWEEN ? AND ?
+        `;
+        const countParams = [storeId, startDate, endDate];
+
+        if (categoryId) {
+            countQuery += ` AND c.id = ?`;
+            countParams.push(categoryId);
+        }
+
+        if (paymentMethod) {
+            if (paymentMethod === 'Online') {
+                countQuery += ` AND i.payment_method IN ('UPI', 'CARD', 'QR')`;
+            } else {
+                countQuery += ` AND i.payment_method = ?`;
+                countParams.push(paymentMethod);
+            }
+        }
+
+        const [countResult] = await db.query(countQuery, countParams);
+        const total = countResult[0].total;
+
+        res.json({
+            data: rows.map(r => ({
+                id: r.id,
+                invoiceNumber: r.invoice_number,
+                date: r.date,
+                items: r.item_names,
+                paymentMethod: r.payment_method,
+                total: parseFloat(r.grand_total),
+                profit: parseFloat(r.profit)
+            })),
+            pagination: {
+                page: pageNum,
+                limit: limitNum,
+                total: total,
+                totalPages: Math.ceil(total / limitNum)
+            }
+        });
+
+    } catch (e) {
+        console.error('Drill-down invoices error:', e);
+        res.status(500).json({ error: 'Failed to fetch drill-down invoices', details: e.message });
+    }
 });
 
 // Category Performance
@@ -274,44 +329,6 @@ router.get('/sales-heatmap', authenticateToken, async (req, res) => {
         `, [storeId, startDate, endDate]);
 
         res.json(rows);
-    } catch (e) { console.timeLog(e); res.status(500).send('Error'); }
-});
-
-// Drill Down Invoices
-router.get('/drill-down/invoices', authenticateToken, async (req, res) => {
-    try {
-        const { storeId, categoryId, startDate, endDate } = req.query;
-        if ((req.user.role === 'STORE_ADMIN' && req.user.storeId !== storeId)) return res.sendStatus(403);
-
-        let query = `
-            SELECT i.id, i.invoice_number, i.date, i.grand_total,
-                   GROUP_CONCAT(p.name SEPARATOR ', ') as item_names,
-                   SUM(ii.line_total - (ii.quantity * COALESCE(p.cost_price, 0))) as profit
-            FROM invoices i
-            JOIN invoice_items ii ON i.id = ii.invoice_id
-            JOIN products p ON ii.product_id = p.id
-            LEFT JOIN categories c ON p.category_id = c.id
-            WHERE i.store_id = ? AND i.date BETWEEN ? AND ?
-        `;
-        const params = [storeId, startDate, endDate];
-
-        if (categoryId) {
-            query += ` AND c.id = ?`;
-            params.push(categoryId);
-        }
-
-        query += ` GROUP BY i.id ORDER BY i.date DESC LIMIT 50`;
-
-        const [rows] = await db.query(query, params);
-        res.json(rows.map(r => ({
-            id: r.id,
-            invoiceNumber: r.invoice_number,
-            date: r.date,
-            items: r.item_names,
-            total: parseFloat(r.grand_total),
-            profit: parseFloat(r.profit)
-        })));
-
     } catch (e) { console.error(e); res.status(500).send('Error'); }
 });
 

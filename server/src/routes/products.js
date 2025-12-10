@@ -71,6 +71,24 @@ router.put('/:id', authenticateToken, async (req, res) => {
     try {
         const { categoryId, name, price, stockQty, taxOverride, sku, imageUrl, costPrice } = req.body;
 
+        // Validate stock quantity and price
+        if (stockQty !== undefined && stockQty < 0) {
+            return res.status(400).json({ error: 'Stock quantity cannot be negative' });
+        }
+
+        if (price !== undefined && price < 0) {
+            return res.status(400).json({ error: 'Price cannot be negative' });
+        }
+
+        if (costPrice !== undefined && costPrice < 0) {
+            return res.status(400).json({ error: 'Cost price cannot be negative' });
+        }
+
+        // Warning if cost price exceeds selling price
+        if (costPrice !== undefined && price !== undefined && costPrice > price) {
+            console.warn(`Warning: Cost price (${costPrice}) exceeds selling price (${price}) for product ${req.params.id}`);
+        }
+
         const [result] = await db.query(
             `UPDATE products SET 
         category_id = COALESCE(?, category_id),

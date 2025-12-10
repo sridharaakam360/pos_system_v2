@@ -44,7 +44,7 @@ router.get('/store/:storeId', authenticateToken, async (req, res) => {
             const assetValue = parseFloat(p.total_asset_value || 0);
             const partnerTotal = cashValue + assetValue;
             const calculatedPercentage = totalValue > 0 ? (partnerTotal / totalValue) * 100 : 0;
-            
+
             return {
                 id: p.id,
                 storeId: p.store_id,
@@ -128,11 +128,11 @@ router.get('/:id', authenticateToken, async (req, res) => {
              GROUP BY p.id`,
             [partnership.store_id]
         );
-        
+
         const totalCash = allPartnerships.reduce((sum, p) => sum + parseFloat(p.cash_investment || 0), 0);
         const totalAssets = allPartnerships.reduce((sum, p) => sum + parseFloat(p.total_asset_value || 0), 0);
         const totalValue = totalCash + totalAssets;
-        
+
         const cashValue = parseFloat(partnership.cash_investment || 0);
         const assetValue = parseFloat(partnership.total_asset_value || 0);
         const partnerTotal = cashValue + assetValue;
@@ -180,7 +180,11 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
 // Create partnership
 router.post('/', authenticateToken, requireRole('SUPER_ADMIN', 'STORE_ADMIN'), async (req, res) => {
+    const connection = await db.getConnection();
+
     try {
+        await connection.beginTransaction();
+
         const {
             storeId, partnerName, email, phoneNumber, investmentAmount, cashInvestment,
             investmentDate, address, bankDetails, notes, isActive, assets
@@ -190,24 +194,27 @@ router.post('/', authenticateToken, requireRole('SUPER_ADMIN', 'STORE_ADMIN'), a
         const finalCashInvestment = cashInvestment || investmentAmount;
 
         if (!storeId || !partnerName || !finalCashInvestment || !investmentDate) {
+            await connection.rollback();
             return res.status(400).json({ error: 'storeId, partnerName, cashInvestment, and investmentDate are required' });
         }
 
         // Only STORE_ADMIN can create partnerships for their own store, SUPER_ADMIN can do all
         if (req.user.role === 'STORE_ADMIN' && req.user.storeId !== storeId) {
+            await connection.rollback();
             return res.status(403).json({ error: 'You can only add partnerships to your own store' });
         }
 
         // Validate investment amount
         if (finalCashInvestment <= 0) {
+            await connection.rollback();
             return res.status(400).json({ error: 'Cash investment must be greater than 0' });
         }
 
         // Generate UUID for partnership
-        const partnershipId = await db.query('SELECT UUID() as id');
+        const partnershipId = await connection.query('SELECT UUID() as id');
         const finalPartnershipId = partnershipId[0][0].id;
 
-        await db.query(
+        await connection.query(
             `INSERT INTO partnerships 
              (id, store_id, partner_name, email, phone_number, cash_investment, investment_date, ownership_percentage, address, bank_details, notes, is_active)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -222,10 +229,10 @@ router.post('/', authenticateToken, requireRole('SUPER_ADMIN', 'STORE_ADMIN'), a
         if (Array.isArray(assets) && assets.length > 0) {
             for (const asset of assets) {
                 if (asset.assetName && asset.assetValue > 0) {
-                    const assetId = await db.query('SELECT UUID() as id');
+                    const assetId = await connection.query('SELECT UUID() as id');
                     const finalAssetId = assetId[0][0].id;
-                    
-                    await db.query(
+
+                    await connection.query(
                         `INSERT INTO partnership_assets 
                          (id, partnership_id, asset_name, asset_description, asset_value, asset_type, contributed_date, notes)
                          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -239,13 +246,18 @@ router.post('/', authenticateToken, requireRole('SUPER_ADMIN', 'STORE_ADMIN'), a
             }
         }
 
+        await connection.commit();
+
         res.status(201).json({
             message: 'Partnership created successfully',
             partnershipId: finalPartnershipId
         });
     } catch (error) {
+        await connection.rollback();
         console.error('Create partnership error:', error);
         res.status(500).json({ error: 'Failed to create partnership' });
+    } finally {
+        connection.release();
     }
 });
 

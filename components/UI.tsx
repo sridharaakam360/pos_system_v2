@@ -1,7 +1,7 @@
 import React from 'react';
 
-export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' | 'success' }> = ({ 
-  children, variant = 'primary', className = '', ...props 
+export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' | 'success' }> = ({
+  children, variant = 'primary', className = '', ...props
 }) => {
   const base = "px-4 py-2 rounded-lg font-medium transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed";
   const variants = {
@@ -26,9 +26,9 @@ export const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement> & { lab
           {icon}
         </div>
       )}
-      <input 
-        className={`w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 ${icon ? 'pl-10' : ''} ${className}`} 
-        {...props} 
+      <input
+        className={`w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 ${icon ? 'pl-10' : ''} ${className}`}
+        {...props}
       />
     </div>
   </div>
@@ -37,8 +37,8 @@ export const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement> & { lab
 export const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement> & { label?: string }> = ({ label, children, className = '', ...props }) => (
   <div className="flex flex-col gap-1 w-full">
     {label && <label className="text-sm font-medium text-slate-700">{label}</label>}
-    <select 
-      className={`w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white ${className}`} 
+    <select
+      className={`w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white ${className}`}
       {...props}
     >
       {children}
@@ -46,8 +46,8 @@ export const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement> & { 
   </div>
 );
 
-export const Card: React.FC<{ children: React.ReactNode, title?: string, className?: string }> = ({ children, title, className = '' }) => (
-  <div className={`bg-white rounded-xl shadow-sm border border-slate-200 p-6 ${className}`}>
+export const Card: React.FC<React.HTMLAttributes<HTMLDivElement> & { children: React.ReactNode, title?: string, className?: string }> = ({ children, title, className = '', ...props }) => (
+  <div className={`bg-white rounded-xl shadow-sm border border-slate-200 p-6 ${className}`} {...props}>
     {title && <h3 className="text-lg font-semibold text-slate-800 mb-4">{title}</h3>}
     {children}
   </div>

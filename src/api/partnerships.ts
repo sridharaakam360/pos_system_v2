@@ -25,7 +25,7 @@ export interface Partnership {
     partnerName: string;
     email?: string;
     phoneNumber?: string;
-    investmentAmount?: number; // Legacy field, maps to cashInvestment
+    investmentAmount?: number; 
     cashInvestment?: number;
     investmentDate: string; // YYYY-MM-DD format
     ownershipPercentage?: number; // Auto-calculated from cash + assets

@@ -3,6 +3,9 @@ import { Store, Category, Product, Invoice } from '../types';
 import { Card, Button, Input, Select, Badge, Modal, Tabs } from '../components/UI';
 import { Plus, Package, Tag, Users, DollarSign, Settings, BarChart3, Edit2, Trash2, AlertTriangle } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { Partnerships } from './Partnerships';
+import { FinancialReports } from './FinancialReports';
+import { Expenses } from './Expenses';
 
 type Tab = 'DASHBOARD' | 'PRODUCTS' | 'CATEGORIES' | 'PARTNERSHIPS' | 'FINANCIAL' | 'SETTINGS';
 
@@ -125,7 +128,7 @@ export const StoreAdmin: React.FC<StoreAdminProps> = ({
       setCurrentProduct({ ...product });
     } else {
       setEditingProduct(null);
-      setCurrentProduct({ storeId: store.id, price: 0, stockQty: 0 });
+      setCurrentProduct({ storeId: store.id, price: 0, stockQty: 0, costPrice: 0 });
     }
     setProductModalOpen(true);
   };
@@ -217,8 +220,8 @@ export const StoreAdmin: React.FC<StoreAdminProps> = ({
               <AreaChart data={analytics.revenueChartData}>
                 <defs>
                   <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2}/>
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -395,8 +398,9 @@ export const StoreAdmin: React.FC<StoreAdminProps> = ({
       case 'DASHBOARD': return renderDashboard();
       case 'PRODUCTS': return renderProducts();
       case 'CATEGORIES': return renderCategories();
-      case 'FINANCIAL': return <Card><p className="text-slate-500 py-8 text-center">Financial reports coming soon...</p></Card>;
-      case 'PARTNERSHIPS': return <Card><p className="text-slate-500 py-8 text-center">Partnerships module coming soon...</p></Card>;
+      case 'EXPENSES': return <Expenses store={store} />;
+      case 'FINANCIAL': return <FinancialReports store={store} />;
+      case 'PARTNERSHIPS': return <Partnerships store={store} />;
       case 'SETTINGS': return (
         <Card>
           <Button onClick={() => setSettingsModalOpen(true)} className="flex items-center gap-2">
@@ -424,6 +428,7 @@ export const StoreAdmin: React.FC<StoreAdminProps> = ({
             { id: 'PRODUCTS', label: 'Products', icon: Package },
             { id: 'CATEGORIES', label: 'Categories', icon: Tag },
             { id: 'PARTNERSHIPS', label: 'Partners', icon: Users },
+            { id: 'EXPENSES', label: 'Expenses', icon: DollarSign },
             { id: 'FINANCIAL', label: 'Financial', icon: DollarSign },
             { id: 'SETTINGS', label: 'Settings', icon: Settings },
           ]}
@@ -461,7 +466,10 @@ export const StoreAdmin: React.FC<StoreAdminProps> = ({
               <Input label={`Price (${store.currency})`} type="number" step="0.01" value={currentProduct.price || 0} onChange={e => setCurrentProduct({ ...currentProduct, price: +e.target.value })} />
               <Input label="Stock" type="number" value={currentProduct.stockQty || 0} onChange={e => setCurrentProduct({ ...currentProduct, stockQty: +e.target.value })} />
             </div>
-            <Input label="SKU (optional)" value={currentProduct.sku || ''} onChange={e => setCurrentProduct({ ...currentProduct, sku: e.target.value })} />
+            <div className="grid grid-cols-2 gap-4">
+              <Input label={`Cost Price (${store.currency})`} type="number" step="0.01" value={currentProduct.costPrice || 0} onChange={e => setCurrentProduct({ ...currentProduct, costPrice: +e.target.value })} />
+              <Input label="SKU (optional)" value={currentProduct.sku || ''} onChange={e => setCurrentProduct({ ...currentProduct, sku: e.target.value })} />
+            </div>
             <Input label="Image URL (optional)" value={currentProduct.imageUrl || ''} onChange={e => setCurrentProduct({ ...currentProduct, imageUrl: e.target.value })} />
             <Input label="Tax Override (%)" type="number" placeholder="Use category default" value={currentProduct.taxOverride ?? ''} onChange={e => setCurrentProduct({ ...currentProduct, taxOverride: e.target.value ? +e.target.value : undefined })} />
             <div className="flex justify-end gap-3 pt-4">
@@ -470,7 +478,7 @@ export const StoreAdmin: React.FC<StoreAdminProps> = ({
             </div>
           </div>
         </Modal>
-                {/* Store Settings Modal */}
+        {/* Store Settings Modal */}
         <Modal
           isOpen={isSettingsModalOpen}
           onClose={() => setSettingsModalOpen(false)}

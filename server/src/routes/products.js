@@ -10,7 +10,7 @@ router.get('/', authenticateToken, async (req, res) => {
         const { storeId } = req.query;
 
         let query = `SELECT id, store_id, category_id, name, price, stock_qty, 
-                        tax_override, sku, image_url 
+                        tax_override, sku, image_url, cost_price
                  FROM products`;
         let params = [];
 
@@ -32,7 +32,8 @@ router.get('/', authenticateToken, async (req, res) => {
             stockQty: prod.stock_qty,
             taxOverride: prod.tax_override ? parseFloat(prod.tax_override) : null,
             sku: prod.sku,
-            imageUrl: prod.image_url
+            imageUrl: prod.image_url,
+            costPrice: prod.cost_price ? parseFloat(prod.cost_price) : 0
         })));
     } catch (error) {
         console.error('Get products error:', error);
@@ -43,16 +44,16 @@ router.get('/', authenticateToken, async (req, res) => {
 // Create product
 router.post('/', authenticateToken, async (req, res) => {
     try {
-        const { id, storeId, categoryId, name, price, stockQty, taxOverride, sku, imageUrl } = req.body;
+        const { id, storeId, categoryId, name, price, stockQty, taxOverride, sku, imageUrl, costPrice } = req.body;
 
         if (!storeId || !categoryId || !name || price === undefined) {
             return res.status(400).json({ error: 'Store ID, category ID, name, and price are required' });
         }
 
         await db.query(
-            `INSERT INTO products (id, store_id, category_id, name, price, stock_qty, tax_override, sku, image_url) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [id, storeId, categoryId, name, price, stockQty || 0, taxOverride || null, sku || null, imageUrl || null]
+            `INSERT INTO products (id, store_id, category_id, name, price, stock_qty, tax_override, sku, image_url, cost_price) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [id, storeId, categoryId, name, price, stockQty || 0, taxOverride || null, sku || null, imageUrl || null, costPrice || 0]
         );
 
         res.status(201).json({
@@ -68,7 +69,7 @@ router.post('/', authenticateToken, async (req, res) => {
 // Update product
 router.put('/:id', authenticateToken, async (req, res) => {
     try {
-        const { categoryId, name, price, stockQty, taxOverride, sku, imageUrl } = req.body;
+        const { categoryId, name, price, stockQty, taxOverride, sku, imageUrl, costPrice } = req.body;
 
         const [result] = await db.query(
             `UPDATE products SET 
@@ -78,9 +79,10 @@ router.put('/:id', authenticateToken, async (req, res) => {
         stock_qty = COALESCE(?, stock_qty),
         tax_override = ?,
         sku = ?,
-        image_url = ?
+        image_url = ?,
+        cost_price = COALESCE(?, cost_price)
        WHERE id = ?`,
-            [categoryId, name, price, stockQty, taxOverride, sku, imageUrl, req.params.id]
+            [categoryId, name, price, stockQty, taxOverride, sku, imageUrl, costPrice, req.params.id]
         );
 
         if (result.affectedRows === 0) {

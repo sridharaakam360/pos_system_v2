@@ -50,6 +50,7 @@ export interface Product {
   taxOverride?: number | null; // If null, use category default
   sku?: string;
   imageUrl?: string;
+  costPrice?: number; // Cost Price for profit calculation
 }
 
 export interface CartItem extends Product {
@@ -104,4 +105,57 @@ export interface DataContextType {
   addProduct: (prod: Product) => void;
   addInvoice: (inv: Invoice) => void;
   updateProductStock: (id: string, qty: number) => void;
+}
+
+export interface ReportData {
+  totalRevenue: number;
+  totalCost: number;
+  grossProfit: number;
+  taxCollected: number;
+  netIncome: number;
+  margin: number;
+}
+
+export interface SalesTrend {
+  date: string;
+  revenue: number;
+  profit: number;
+}
+
+export interface TopProduct {
+  id: string;
+  name: string;
+  quantitySold: number;
+  revenue: number;
+  profit: number;
+}
+
+export interface CategoryPerformance {
+  categoryId: string;
+  categoryName: string;
+  revenue: number;
+  profit: number;
+  itemCount: number;
+}
+
+export interface HeatmapData {
+  dayOfWeek: string; // 'Mon', 'Tue', etc.
+  hour: number; // 0-23
+  salesCount: number;
+  revenue: number;
+}
+
+export interface PaymentStats {
+  method: string;
+  count: number;
+  revenue: number;
+}
+
+export interface DrillDownInvoice {
+  id: string;
+  invoiceNumber: string;
+  date: string;
+  items: string; // Summary of items
+  total: number;
+  profit: number;
 }

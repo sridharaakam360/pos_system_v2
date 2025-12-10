@@ -38,33 +38,39 @@ const App = () => {
   const [showDataConnectTest, setShowDataConnectTest] = useState(false);
 
 
+  // Global guard to prevent double-fetching on HMR or remounts
+  const dataLoadedRef = React.useRef(false);
+
   // --- Data Synchronization Logic ---
+  const refreshData = React.useCallback(async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) return;
+
+      // Load stores, categories, products, invoices from API
+      const [storesData, categoriesData, productsData, invoicesData] = await Promise.all([
+        storesApi.getAll(),
+        categoriesApi.getAll(),
+        productsApi.getAll(),
+        invoicesApi.getAll()
+      ]);
+
+      setStores(storesData);
+      setCategories(categoriesData);
+      setProducts(productsData);
+      setInvoices(invoicesData);
+    } catch (error) {
+      console.error('Failed to load data from API:', error);
+    }
+  }, []); // Empty dependencies to ensure stability and prevent loop
+
   useEffect(() => {
-    // Load initial data from MySQL API on mount
-    const loadData = async () => {
-      try {
-        const token = localStorage.getItem('auth_token');
-        if (!token) return;
+    // Only fetch if not already loaded (guard against remounts)
+    if (dataLoadedRef.current) return;
+    dataLoadedRef.current = true;
 
-        // Load stores, categories, products, invoices from API
-        const [storesData, categoriesData, productsData, invoicesData] = await Promise.all([
-          storesApi.getAll(),
-          categoriesApi.getAll(),
-          productsApi.getAll(),
-          invoicesApi.getAll()
-        ]);
-
-        setStores(storesData);
-        setCategories(categoriesData);
-        setProducts(productsData);
-        setInvoices(invoicesData);
-      } catch (error) {
-        console.error('Failed to load data from API:', error);
-      }
-    };
-
-    loadData();
-  }, []);
+    refreshData();
+  }, []); // Run once on mount
 
 
   // Sync activeStoreId with User's storeId if applicable
@@ -251,6 +257,13 @@ const App = () => {
     }
   };
 
+  // Local only update for POS to avoid double deduction (Backend deducts on Invoice create)
+  const handleLocalProductStockUpdate = (id: string, delta: number) => {
+    setProducts(prev => prev.map(p =>
+      p.id === id ? { ...p, stockQty: p.stockQty + delta } : p
+    ));
+  };
+
   // Invoice
   const handleSaveInvoice = async (invoice: Invoice) => {
     // Optimistic UI Update
@@ -342,7 +355,8 @@ const App = () => {
             products={storeProducts}
             invoices={storeInvoices}
             onSaveInvoice={handleSaveInvoice}
-            onUpdateProductStock={handleUpdateProductStock}
+            onUpdateProductStock={handleLocalProductStockUpdate}
+            onRefreshData={refreshData}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-slate-500">Store not found or not selected.</div>

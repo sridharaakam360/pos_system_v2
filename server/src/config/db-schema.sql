@@ -52,6 +52,26 @@ CREATE TABLE stores (
     INDEX idx_is_active (is_active)
 ) ENGINE=InnoDB;
 
+-- Customers Table (for billing with customer details)
+CREATE TABLE customers (
+    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    store_id VARCHAR(36) NOT NULL,
+    name VARCHAR(150) NOT NULL,
+    mobile VARCHAR(20),
+    email VARCHAR(100),
+    gender ENUM('MALE', 'FEMALE', 'OTHER', 'PREFER_NOT_TO_SAY'),
+    place VARCHAR(200),
+    address TEXT,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE,
+    INDEX idx_store_id (store_id),
+    INDEX idx_store_mobile (store_id, mobile),
+    INDEX idx_store_name (store_id, name),
+    INDEX idx_mobile (mobile)
+) ENGINE=InnoDB;
+
 -- Categories Table
 CREATE TABLE categories (
     id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
@@ -92,20 +112,26 @@ CREATE TABLE invoices (
     id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
     invoice_number VARCHAR(50) UNIQUE NOT NULL,
     store_id VARCHAR(36) NOT NULL,
+    customer_id VARCHAR(36) NULL,  -- Optional customer information
     date DATETIME DEFAULT CURRENT_TIMESTAMP,  -- Changed to DATETIME for better precision
     subtotal DECIMAL(10,2) NOT NULL,
     tax_total DECIMAL(10,2) NOT NULL,
     discount_total DECIMAL(10,2) NOT NULL,
     grand_total DECIMAL(10,2) NOT NULL,
     payment_method ENUM('CASH', 'CARD', 'UPI', 'QR') NOT NULL,
+    payment_status ENUM('PENDING', 'COMPLETED', 'FAILED', 'RETRY') DEFAULT 'COMPLETED',  -- For payment failure tracking
     synced BOOLEAN DEFAULT TRUE,
+    retry_count INT DEFAULT 0,  -- Track retry attempts
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL,
     INDEX idx_store_id (store_id),
+    INDEX idx_customer_id (customer_id),
     INDEX idx_invoice_number (invoice_number),
     INDEX idx_date (date),
-    INDEX idx_store_date (store_id, date)  -- Composite index for date range queries
+    INDEX idx_store_date (store_id, date),  -- Composite index for date range queries
+    INDEX idx_payment_status (payment_status)  -- For finding failed/pending payments
 ) ENGINE=InnoDB;
 
 -- Invoice Items Table

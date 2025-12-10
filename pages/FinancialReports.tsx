@@ -38,9 +38,26 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ store }) => 
 
     const [loading, setLoading] = useState(false);
 
+    // Get first day of current month in local timezone
+    const getFirstDayOfMonth = () => {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        return `${year}-${month}-01`;
+    };
+
+    // Get today's date in local timezone
+    const getTodayDate = () => {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
     const [dateRange, setDateRange] = useState({
-        start: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0],
-        end: new Date().toISOString().split('T')[0]
+        start: getFirstDayOfMonth(),
+        end: getTodayDate()
     });
 
     const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
@@ -104,7 +121,11 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ store }) => 
                 if (activeFilters.paymentMethod) url += `&paymentMethod=${activeFilters.paymentMethod}`;
 
                 const res = await fetch(url, { headers });
-                if (res.ok) setDrillDownInvoices(await res.json());
+                if (res.ok) {
+                    const response = await res.json();
+                    // Handle paginated response
+                    setDrillDownInvoices(Array.isArray(response) ? response : response.data || []);
+                }
 
             } else if (drillType === 'PRODUCTS') {
                 let url = `${base}/top-products?storeId=${store.id}`;

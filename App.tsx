@@ -266,16 +266,11 @@ const App = () => {
 
   // Invoice
   const handleSaveInvoice = async (invoice: Invoice) => {
-    // Optimistic UI Update
-    const newInvoice = { ...invoice, synced: false };
-    setInvoices(prev => [newInvoice, ...prev]);
-
-    // Save to MySQL API
+    // Save to MySQL API (no optimistic update to avoid duplicates)
     try {
       await invoicesApi.create(invoice);
-      // Mark as synced
-      setInvoices(prev => prev.map(inv => inv.id === invoice.id ? { ...inv, synced: true } : inv));
       console.log('✅ Invoice saved successfully');
+      // Refresh data will be called by POS component
     } catch (error) {
       console.error('❌ Failed to save invoice:', error);
       // Optionally show error to user

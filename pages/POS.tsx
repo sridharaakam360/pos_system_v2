@@ -1,8 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Store, Product, Category, CartItem, Invoice } from '../types';
+import { Store, Product, Category, CartItem, Invoice, Customer } from '../types';
 import { Button, Input, Modal, Badge, Card } from '../components/UI';
-import { Search, Trash2, Printer, CreditCard, Banknote, QrCode, History, Calculator, Clock, CheckCircle } from 'lucide-react';
+import { Search, Trash2, Printer, CreditCard, Banknote, QrCode, History, Calculator, Clock, CheckCircle, WifiOff } from 'lucide-react';
 import { InvoicePrint } from './InvoicePrint';
+import { CustomerInput } from '../components/CustomerInput';
+import { OfflineIndicator } from '../components/OfflineIndicator';
+import { isOnline, addPendingInvoice, syncPendingInvoices, getPendingInvoices } from '../utils/offlineManager';
 
 interface POSProps {
   store: Store;
@@ -23,6 +26,80 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
     }
   }, [onRefreshData]);
 
+  // Offline/Online Detection and Auto-Sync
+  useEffect(() => {
+    const handleOnline = async () => {
+      setOffline(false);
+      // Auto-sync pending invoices when coming online
+      const pending = getPendingInvoices();
+      if (pending.length > 0) {
+        alert(`📡 Back online! Syncing ${pending.length} pending invoice(s)...`);
+        await handleSync();
+      }
+    };
+
+    const handleOffline = () => {
+      setOffline(true);
+      alert('📵 You are offline. Invoices will be saved locally and synced when connection is restored.');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Update pending count periodically
+    const interval = setInterval(() => {
+      setPendingCount(getPendingInvoices().length);
+    }, 5000);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Sync Handler
+  const handleSync = async () => {
+    const submitInvoice = async (invoice: any) => {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch('http://localhost:3001/api/invoices', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token || ''}`
+        },
+        body: JSON.stringify(invoice)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to sync invoice');
+      }
+
+      return response.json();
+    };
+
+    const result = await syncPendingInvoices(submitInvoice, (current, total) => {
+      console.log(`Syncing ${current}/${total}...`);
+    });
+
+    setPendingCount(getPendingInvoices().length);
+
+    if (result.synced > 0) {
+      alert(`✅ Successfully synced ${result.synced} invoice(s)!`);
+      // Only refresh once after all syncs complete
+      if (onRefreshData) {
+        onRefreshData();
+      }
+    }
+
+    if (result.failed > 0) {
+      alert(`⚠️ ${result.failed} invoice(s) failed to sync. They will be retried later.`);
+    }
+
+    // Return result to indicate sync completion
+    return result;
+  };
+
   // Register State
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -32,6 +109,13 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
   const [lastInvoice, setLastInvoice] = useState<Invoice | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Customer State
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+
+  // Offline State
+  const [offline, setOffline] = useState(!isOnline());
+  const [pendingCount, setPendingCount] = useState(0);
 
   // History State
   const [historySearch, setHistorySearch] = useState('');
@@ -193,9 +277,10 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
 
     const payload = {
       storeId: store.id,
+      customerId: selectedCustomer?.id || null,  // Include customer if selected
       date: formatMySQLDate(new Date()),
       items: cart.map(item => ({
-        productId: item.id,           // ← this is productId
+        productId: item.id,
         name: item.name,
         quantity: item.quantity,
         price: item.price,
@@ -207,17 +292,36 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
       taxTotal: Number(taxTotal.toFixed(2)),
       discountTotal: Number(discountTotal.toFixed(2)),
       grandTotal: Number(grandTotal.toFixed(2)),
-      paymentMethod: paymentMode
+      paymentMethod: paymentMode,
+      paymentStatus: (isOnline() ? 'COMPLETED' : 'PENDING') as 'COMPLETED' | 'PENDING' | 'FAILED' | 'RETRY'  // Track payment status
     };
 
+    // Check if offline
+    if (!isOnline()) {
+      // Save to pending queue
+      const tempId = addPendingInvoice({
+        ...payload,
+        synced: false
+      });
+
+      alert('📱 Offline Mode: Invoice saved locally. Will sync when connection restored.');
+
+      setCart([]);
+      setSelectedCustomer(null);
+      setShowPaymentModal(false);
+      setIsSubmitting(false);
+      setPendingCount(getPendingInvoices().length);
+      return;
+    }
+
     try {
-      const token = localStorage.getItem('auth_token');  // ← THIS IS THE KEY
+      const token = localStorage.getItem('auth_token');
 
       const response = await fetch('http://localhost:3001/api/invoices', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token || ''}`  // ← ADD THIS HEADER
+          'Authorization': `Bearer ${token || ''}`
         },
         body: JSON.stringify(payload)
       });
@@ -225,7 +329,18 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
       if (!response.ok) {
         const errorData = await response.json();
         console.error('Invoice save failed:', errorData);
-        alert('Failed: ' + (errorData.error || 'Unknown error'));
+
+        // Save to pending queue on server error
+        addPendingInvoice({
+          ...payload,
+          synced: false
+        });
+
+        alert('⚠️ Server error: Invoice saved locally for retry. Error: ' + (errorData.error || 'Unknown error'));
+        setCart([]);
+        setSelectedCustomer(null);
+        setShowPaymentModal(false);
+        setPendingCount(getPendingInvoices().length);
         return;
       }
 
@@ -234,12 +349,14 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
         id: result.invoiceId,
         invoiceNumber: result.invoiceNumber,
         ...payload,
+        customerInfo: selectedCustomer || undefined,
         items: payload.items.map((it, i) => ({ ...it, id: `item_${i}` })),
         synced: true
       };
 
       setLastInvoice(fullInvoice);
-      onSaveInvoice(fullInvoice);
+      // Don't call onSaveInvoice - invoice is already created via API above
+      // onSaveInvoice would create a duplicate invoice
 
       // Stock is already deducted on the server during invoice creation
       // Refresh product data to get updated stock levels
@@ -248,12 +365,24 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
       }
 
       setCart([]);
+      setSelectedCustomer(null);
       setShowPaymentModal(false);
       setShowReceipt(true);
 
     } catch (error) {
       console.error('Network error:', error);
-      alert('Connection failed. Check if server is running.');
+
+      // Save to pending queue on network error
+      addPendingInvoice({
+        ...payload,
+        synced: false
+      });
+
+      alert('📡 Connection failed: Invoice saved locally. Will sync automatically when online.');
+      setCart([]);
+      setSelectedCustomer(null);
+      setShowPaymentModal(false);
+      setPendingCount(getPendingInvoices().length);
     } finally {
       setIsSubmitting(false);
     }
@@ -517,7 +646,19 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
       </div>
 
       {/* Payment Modal */}
-      <Modal isOpen={showPaymentModal} onClose={() => setShowPaymentModal(false)} title="Select Payment Method">
+      <Modal isOpen={showPaymentModal} onClose={() => setShowPaymentModal(false)} title="Complete Payment">
+        {/* Customer Details Section */}
+        <div className="mb-6">
+          <h3 className="text-sm font-medium text-slate-700 mb-3">Customer Details (Optional)</h3>
+          <CustomerInput
+            storeId={store.id}
+            selectedCustomer={selectedCustomer}
+            onCustomerSelect={setSelectedCustomer}
+          />
+        </div>
+
+        {/* Payment Method Selection */}
+        <h3 className="text-sm font-medium text-slate-700 mb-3">Select Payment Method</h3>
         <div className="grid grid-cols-2 gap-4 mb-6">
           <PaymentOption
             icon={Banknote}
@@ -578,6 +719,8 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
         </Modal>
       )}
 
+      {/* Offline Indicator */}
+      <OfflineIndicator onSync={handleSync} />
     </div>
   );
 };

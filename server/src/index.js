@@ -12,6 +12,7 @@ import invoiceRoutes from './routes/invoices.js';
 import partnershipRoutes from './routes/partnerships.js';
 import expenseRoutes from './routes/expenses.js';
 import financialRoutes from './routes/financial.js';
+import customerRoutes from './routes/customers.js';
 
 const app = express();
 
@@ -28,8 +29,9 @@ app.use('/api/invoices', invoiceRoutes);
 app.use('/api/partnerships', partnershipRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/financial', financialRoutes);
+app.use('/api/customers', customerRoutes);
 
-const PORT = process.env.PORT || 3002;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });

@@ -60,10 +60,26 @@ export interface CartItem extends Product {
   lineTotal: number;
 }
 
+export interface Customer {
+  id?: string;
+  storeId: string;
+  name: string;
+  mobile?: string;
+  email?: string;
+  gender?: 'MALE' | 'FEMALE' | 'OTHER' | 'PREFER_NOT_TO_SAY';
+  place?: string;
+  address?: string;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Invoice {
   id: string;                    // will be real UUID from server
   invoiceNumber: string;
   storeId: string;
+  customerId?: string;           // Optional customer reference
+  customerInfo?: Customer;       // Optional customer details
   date: string;
   items: CartItem[];
   subtotal: number;
@@ -71,6 +87,8 @@ export interface Invoice {
   discountTotal: number;
   grandTotal: number;
   paymentMethod: 'CASH' | 'CARD' | 'UPI' | 'QR';
+  paymentStatus?: 'PENDING' | 'COMPLETED' | 'FAILED' | 'RETRY';  // Payment status tracking
+  retryCount?: number;           // Number of retry attempts
   synced: boolean;
 }
 

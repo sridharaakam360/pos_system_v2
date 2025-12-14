@@ -266,36 +266,17 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
     if (cart.length === 0) return;
     setShowPaymentModal(true);
   };
-  const finalizePayment = async () => {
-    if (cart.length === 0) return;
-    if (isSubmitting) return; // Prevent double click
+  // Load Razorpay SDK
+  const loadRazorpay = () =>
+    new Promise(resolve => {
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
 
-    setIsSubmitting(true);
-
-    const formatMySQLDate = (date: Date) =>
-      date.toISOString().slice(0, 19).replace('T', ' ');
-
-    const payload = {
-      storeId: store.id,
-      customerId: selectedCustomer?.id || null,  // Include customer if selected
-      date: formatMySQLDate(new Date()),
-      items: cart.map(item => ({
-        productId: item.id,
-        name: item.name,
-        quantity: item.quantity,
-        price: item.price,
-        appliedTaxPercent: item.appliedTaxPercent,
-        appliedDiscountPercent: item.appliedDiscountPercent,
-        lineTotal: Number(item.lineTotal.toFixed(2))
-      })),
-      subtotal: Number(subtotal.toFixed(2)),
-      taxTotal: Number(taxTotal.toFixed(2)),
-      discountTotal: Number(discountTotal.toFixed(2)),
-      grandTotal: Number(grandTotal.toFixed(2)),
-      paymentMethod: paymentMode,
-      paymentStatus: (isOnline() ? 'COMPLETED' : 'PENDING') as 'COMPLETED' | 'PENDING' | 'FAILED' | 'RETRY'  // Track payment status
-    };
-
+  const saveInvoice = async (payload: any) => {
     // Check if offline
     if (!isOnline()) {
       // Save to pending queue
@@ -355,11 +336,7 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
       };
 
       setLastInvoice(fullInvoice);
-      // Don't call onSaveInvoice - invoice is already created via API above
-      // onSaveInvoice would create a duplicate invoice
 
-      // Stock is already deducted on the server during invoice creation
-      // Refresh product data to get updated stock levels
       if (onRefreshData) {
         onRefreshData();
       }
@@ -386,6 +363,125 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const finalizePayment = async () => {
+    if (cart.length === 0) return;
+    if (isSubmitting) return;
+
+    setIsSubmitting(true);
+
+    const formatMySQLDate = (date: Date) =>
+      date.toISOString().slice(0, 19).replace('T', ' ');
+
+    // Base payload for invoice (will be sent to verify endpoint for Card)
+    const payload = {
+      storeId: store.id,
+      customerId: selectedCustomer?.id || null,
+      date: formatMySQLDate(new Date()),
+      items: cart.map(item => ({
+        productId: item.id,
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+        appliedTaxPercent: item.appliedTaxPercent,
+        appliedDiscountPercent: item.appliedDiscountPercent,
+        lineTotal: Number(item.lineTotal.toFixed(2))
+      })),
+      subtotal: Number(subtotal.toFixed(2)),
+      taxTotal: Number(taxTotal.toFixed(2)),
+      discountTotal: Number(discountTotal.toFixed(2)),
+      grandTotal: Number(grandTotal.toFixed(2)),
+      paymentMethod: paymentMode,
+      paymentStatus: (isOnline() ? 'COMPLETED' : 'PENDING') as 'COMPLETED' | 'PENDING' | 'FAILED' | 'RETRY',
+      customerInfo: selectedCustomer // Pass full customer object for receipt
+    };
+
+    // Razorpay Integration (Card)
+    if (paymentMode === 'RAZORPAY' || paymentMode === 'CARD') {
+      try {
+        const loaded = await loadRazorpay();
+        if (!loaded) {
+          alert('Razorpay SDK failed to load. Check your internet connection.');
+          setIsSubmitting(false);
+          return;
+        }
+
+        // 1. Create Order
+        const orderRes = await fetch('http://localhost:3001/api/payments/razorpay/order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: grandTotal,
+            receipt: `rcpt_${Date.now()}`
+          })
+        });
+
+        if (!orderRes.ok) throw new Error('Failed to create Razorpay order');
+        const orderData = await orderRes.json();
+
+        // 2. Open Razorpay Modal
+        const options = {
+          key: orderData.key,
+          amount: orderData.amount,
+          currency: orderData.currency,
+          name: store.name,
+          description: "POS Transaction",
+          order_id: orderData.orderId, // Note: Backend returns orderId
+          handler: async function (response: any) {
+            try {
+              // 3. Verify Payment & Create Invoice
+              const verifyRes = await fetch('http://localhost:3001/api/payments/razorpay/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  ...response,
+                  invoicePayload: payload
+                })
+              });
+
+              const verifyData = await verifyRes.json();
+
+              if (verifyData.success) {
+                // Success!
+                setLastInvoice(verifyData.invoice);
+                setCart([]);
+                setSelectedCustomer(null);
+                setShowPaymentModal(false);
+                setShowReceipt(true);
+
+                if (onRefreshData) onRefreshData();
+              } else {
+                alert('Payment verification failed! ' + (verifyData.error || ''));
+              }
+            } catch (err) {
+              console.error('Verification error:', err);
+              alert('Payment verified but invoice creation failed. Please contact support.');
+            } finally {
+              setIsSubmitting(false);
+            }
+          },
+          retry: {
+            enabled: false
+          }
+        };
+
+        console.log("Razorpay Options:", options);
+
+        const rzp1 = new (window as any).Razorpay(options);
+        rzp1.open();
+        return;
+
+      } catch (error) {
+        console.error('Razorpay Error:', error);
+        alert('Failed to initiate online payment');
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
+    // Standard Payment Flow (Cash/UPI-Manual)
+    await saveInvoice(payload);
   };
 
   // Generate UPI String

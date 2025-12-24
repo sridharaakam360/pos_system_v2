@@ -1,25 +1,24 @@
 import React, { useState } from 'react';
-import { Store, UserRole, User } from '../types';
-import { Button, Input, Select, Card } from '../components/UI';
-import { Lock, User as UserIcon, Store as StoreIcon } from 'lucide-react';
+import { UserRole, User } from '../types';
+import { Button, Input, Card } from '../components/UI';
 import { authApi } from '../src/api/auth';
 
 interface LoginProps {
-  stores: Store[];
   onLogin: (user: User) => void;
 }
 
-export const Login: React.FC<LoginProps> = ({ stores, onLogin }) => {
+export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [selectedStoreId, setSelectedStoreId] = useState<string>('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('Signing in...');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
+    setLoadingMessage('Authenticating...');
 
     try {
       // Basic Validation
@@ -36,30 +35,29 @@ export const Login: React.FC<LoginProps> = ({ stores, onLogin }) => {
       // Store token in localStorage
       localStorage.setItem('auth_token', token);
 
-      // Check if store selection is required
+      // Create user object based on role
       const userRole = user.role as UserRole;
-      if ((userRole === 'STORE_ADMIN' || userRole === 'CASHIER')) {
-        // Use store from database if available, otherwise require selection
-        const storeId = user.storeId || selectedStoreId;
 
-        if (!storeId) {
-          setError('Please select a store to access');
+      if ((userRole === 'STORE_ADMIN' || userRole === 'CASHIER')) {
+        // Store ID must come from the user account in database
+        if (!user.storeId) {
+          setError('Your account is not assigned to a store. Please contact admin.');
           setLoading(false);
           return;
         }
 
-        // Create user object
         const finalUser: User = {
           id: user.id,
           username: user.username,
           role: userRole,
-          storeId: storeId,
+          storeId: user.storeId,
           email: user.email,
           imageUrl: user.imageUrl
         };
 
-        console.log('✅ Login successful!', finalUser);
-        onLogin(finalUser);
+        console.log('✅ Login successful! Loading store data...', finalUser);
+        setLoadingMessage('Loading store data...');
+        await onLogin(finalUser);
       } else {
         // Super Admin
         const finalUser: User = {
@@ -71,8 +69,9 @@ export const Login: React.FC<LoginProps> = ({ stores, onLogin }) => {
           imageUrl: user.imageUrl
         };
 
-        console.log('✅ Login successful!', finalUser);
-        onLogin(finalUser);
+        console.log('✅ Login successful! Loading data...', finalUser);
+        setLoadingMessage('Loading data...');
+        await onLogin(finalUser);
       }
 
     } catch (err: any) {
@@ -114,22 +113,6 @@ export const Login: React.FC<LoginProps> = ({ stores, onLogin }) => {
               disabled={loading}
             />
 
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-slate-700">Select Store (if applicable)</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white disabled:bg-slate-100"
-                value={selectedStoreId}
-                onChange={e => setSelectedStoreId(e.target.value)}
-                disabled={loading}
-              >
-                <option value="">-- Choose Store (Optional) --</option>
-                {stores.filter(s => s.isActive).map(store => (
-                  <option key={store.id} value={store.id}>{store.name}</option>
-                ))}
-              </select>
-              <p className="text-xs text-slate-500">Required for Store Admin and Cashier roles</p>
-            </div>
-
             {error && (
               <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-red-600" />
@@ -142,16 +125,16 @@ export const Login: React.FC<LoginProps> = ({ stores, onLogin }) => {
               className="w-full py-3 text-lg shadow-lg shadow-indigo-200"
               disabled={loading}
             >
-              {loading ? 'Signing in...' : 'Sign In'}
+              {loading ? loadingMessage : 'Sign In'}
             </Button>
 
-            <div className="text-center text-xs text-slate-400 mt-4">
+            {/* <div className="text-center text-xs text-slate-400 mt-4">
               <div className="bg-blue-50 border border-blue-200 rounded p-2 text-blue-700">
                 <strong>Test Credentials:</strong><br />
                 admin / admin123 (Super Admin)<br />
                 cashier / cashier123 (Cashier)
               </div>
-            </div>
+            </div> */}
           </form>
         </Card>
       </div>

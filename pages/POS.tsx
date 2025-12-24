@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Store, Product, Category, CartItem, Invoice, Customer } from '../types';
+import { Store, Product, Category, CartItem, Invoice, Customer, QueuedOrder } from '../types';
 import { Button, Input, Modal, Badge, Card } from '../components/UI';
-import { Search, Trash2, Printer, CreditCard, Banknote, QrCode, History, Calculator, Clock, CheckCircle, WifiOff } from 'lucide-react';
+import { Search, Trash2, Printer, CreditCard, Banknote, QrCode, History, Calculator, Clock, CheckCircle, WifiOff, Layers, Pause } from 'lucide-react';
 import { InvoicePrint } from './InvoicePrint';
 import { CustomerInput } from '../components/CustomerInput';
 import { OfflineIndicator } from '../components/OfflineIndicator';
 import { isOnline, addPendingInvoice, syncPendingInvoices, getPendingInvoices } from '../utils/offlineManager';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 
 interface POSProps {
   store: Store;
@@ -62,7 +63,7 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
   const handleSync = async () => {
     const submitInvoice = async (invoice: any) => {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch('http://localhost:3001/api/invoices', {
+      const response = await fetch('https://apipostest.yugan.tech/api/invoices', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -116,6 +117,10 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
   // Offline State
   const [offline, setOffline] = useState(!isOnline());
   const [pendingCount, setPendingCount] = useState(0);
+
+  // Queued Orders (Hold/Park) State
+  const [queuedOrders, setQueuedOrders] = useLocalStorage<QueuedOrder[]>(`unibill_queue_${store.id}`, []);
+  const [showQueueModal, setShowQueueModal] = useState(false);
 
   // History State
   const [historySearch, setHistorySearch] = useState('');
@@ -266,6 +271,48 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
     if (cart.length === 0) return;
     setShowPaymentModal(true);
   };
+
+  // Queue Handlers
+  const holdOrder = () => {
+    if (cart.length === 0) return;
+
+    const newQueuedOrder: QueuedOrder = {
+      id: `q_${Date.now()}`,
+      items: [...cart],
+      customer: selectedCustomer,
+      timestamp: new Date().toISOString(),
+      subtotal: subtotal,
+      taxTotal: taxTotal,
+      discountTotal: discountTotal,
+      total: grandTotal
+    };
+
+    setQueuedOrders(prev => [newQueuedOrder, ...prev]);
+    setCart([]);
+    setSelectedCustomer(null);
+    setShowPaymentModal(false); // ✅ Close payment modal if open
+  };
+
+  const restoreOrder = (qOrder: QueuedOrder) => {
+    // If cart is not empty, offer to hold current order first? 
+    // For now, let's just replace the cart. 
+    if (cart.length > 0) {
+      const confirmReplace = confirm("Cart is not empty! Restoring this order will clear your current cart. Continue?");
+      if (!confirmReplace) return;
+    }
+
+    setCart(qOrder.items);
+    setSelectedCustomer(qOrder.customer);
+    setQueuedOrders(prev => prev.filter(o => o.id !== qOrder.id));
+    setShowQueueModal(false);
+    setShowPaymentModal(true); // ✅ Instantly open payment screen
+  };
+
+  const deleteQueuedOrder = (id: string) => {
+    if (confirm("Are you sure you want to remove this order from the queue?")) {
+      setQueuedOrders(prev => prev.filter(o => o.id !== id));
+    }
+  };
   // Load Razorpay SDK
   const loadRazorpay = () =>
     new Promise(resolve => {
@@ -298,7 +345,7 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
     try {
       const token = localStorage.getItem('auth_token');
 
-      const response = await fetch('http://localhost:3001/api/invoices', {
+      const response = await fetch('https://apipostest.yugan.tech/api/invoices', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -408,7 +455,7 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
         }
 
         // 1. Create Order
-        const orderRes = await fetch('http://localhost:3001/api/payments/razorpay/order', {
+        const orderRes = await fetch('https://apipostest.yugan.tech/api/payments/razorpay/order', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -431,7 +478,7 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
           handler: async function (response: any) {
             try {
               // 3. Verify Payment & Create Invoice
-              const verifyRes = await fetch('http://localhost:3001/api/payments/razorpay/verify', {
+              const verifyRes = await fetch('https://apipostest.yugan.tech/api/payments/razorpay/verify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -463,12 +510,25 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
           },
           retry: {
             enabled: false
+          },
+          modal: {
+            ondismiss: function () {
+              console.log('Payment modal closed by user');
+              setIsSubmitting(false);
+            }
           }
         };
 
         console.log("Razorpay Options:", options);
 
         const rzp1 = new (window as any).Razorpay(options);
+
+        rzp1.on('payment.failed', function (response: any) {
+          console.error('Payment Failed:', response.error);
+          alert(`Payment Failed: ${response.error.description}`);
+          setIsSubmitting(false);
+        });
+
         rzp1.open();
         return;
 
@@ -515,6 +575,20 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
             }`}
         >
           <History size={18} /> Sales History
+        </button>
+
+        <div className="flex-1" />
+
+        <button
+          onClick={() => setShowQueueModal(true)}
+          className="relative flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-all"
+        >
+          <Pause size={18} /> Queue
+          {queuedOrders.length > 0 && (
+            <span className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-white animate-pulse">
+              {queuedOrders.length}
+            </span>
+          )}
         </button>
       </div>
 
@@ -574,6 +648,9 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
                         )}
                         <h3 className="font-semibold text-slate-800 line-clamp-2">{product.name}</h3>
                         <div className="text-xs text-slate-500 mt-1">SKU: {product.sku}</div>
+                        <div className={`text-xs font-medium mt-1 ${isLowStock ? 'text-red-600' : 'text-green-600'}`}>
+                          Stock: {product.stockQty} units
+                        </div>
                       </div>
                       <div className="mt-4 flex items-center justify-between">
                         <span className="font-bold text-lg text-indigo-600">{store.currency} {product.price}</span>
@@ -658,13 +735,24 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
                     <span>{store.currency} {grandTotal.toFixed(2)}</span>
                   </div>
                 </div>
-                <Button
-                  className="w-full py-3 text-lg"
-                  onClick={handleCheckout}
-                  disabled={cart.length === 0}
-                >
-                  Charge {store.currency} {grandTotal.toFixed(2)}
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    className="flex-shrink-0 px-4"
+                    onClick={holdOrder}
+                    disabled={cart.length === 0}
+                    title="Hold Order (Park)"
+                  >
+                    <Pause size={20} />
+                  </Button>
+                  <Button
+                    className="flex-1 py-3 text-lg"
+                    onClick={handleCheckout}
+                    disabled={cart.length === 0}
+                  >
+                    Charge {store.currency} {grandTotal.toFixed(2)}
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -796,9 +884,93 @@ export const POS: React.FC<POSProps> = ({ store, products, categories, invoices,
           </div>
         )}
 
-        <Button className="w-full py-3" onClick={finalizePayment} variant="success" disabled={isSubmitting}>
-          {isSubmitting ? 'Processing...' : 'Complete Payment'}
-        </Button>
+        <div className="flex gap-3">
+          <Button
+            className="flex-1 py-3"
+            onClick={holdOrder}
+            variant="secondary"
+          >
+            <Pause size={18} className="mr-2" /> Hold Order
+          </Button>
+          <Button
+            className="flex-[2] py-3"
+            onClick={finalizePayment}
+            variant="success"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Processing...' : 'Complete Payment'}
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Order Queue Modal */}
+      <Modal
+        isOpen={showQueueModal}
+        onClose={() => setShowQueueModal(false)}
+        title={`Order Queue (${queuedOrders.length})`}
+      >
+        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+          {queuedOrders.length === 0 ? (
+            <div className="text-center py-10 text-slate-400">
+              <Pause size={48} className="mx-auto mb-3 opacity-20" />
+              <p>No orders in queue</p>
+              <p className="text-sm">Parked bills will show up here</p>
+            </div>
+          ) : (
+            queuedOrders.map(q => (
+              <div key={q.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl hover:border-indigo-300 transition-all group">
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <div className="font-bold text-slate-800 flex items-center gap-2">
+                      {q.customer?.name || 'Walk-in Customer'}
+                      {q.customer && <Badge color="blue">Member</Badge>}
+                    </div>
+                    <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                      <Clock size={12} /> {new Date(q.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {q.items.length} items
+                      {q.customer?.mobile && <span>• {q.customer.mobile}</span>}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-bold text-indigo-600">
+                      {store.currency} {q.total.toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-xs text-slate-500 line-clamp-2 mb-3 bg-white p-2 rounded border border-slate-100">
+                  <div className="font-medium mb-1 border-b pb-1">Items: {q.items.map(item => `${item.quantity}x ${item.name}`).join(', ')}</div>
+                  <div className="flex justify-between text-[10px] mt-1">
+                    <span>Sub: {store.currency}{q.subtotal.toFixed(2)}</span>
+                    <span>Tax: {store.currency}{q.taxTotal.toFixed(2)}</span>
+                    {q.discountTotal > 0 && <span className="text-green-600">Disc: -{store.currency}{q.discountTotal.toFixed(2)}</span>}
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    variant="primary"
+                    className="flex-1 py-1.5 text-sm"
+                    onClick={() => restoreOrder(q)}
+                  >
+                    Resume Bill
+                  </Button>
+                  <button
+                    onClick={() => deleteQueuedOrder(q.id)}
+                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Clear from queue"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="mt-6 pt-4 border-t text-center">
+          <Button variant="secondary" className="w-full" onClick={() => setShowQueueModal(false)}>
+            Back to POS
+          </Button>
+        </div>
       </Modal>
 
       {/* Receipt Modal (For New Sale) */}

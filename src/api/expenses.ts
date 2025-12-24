@@ -17,22 +17,22 @@ export const expensesApi = {
         const params = new URLSearchParams();
         if (from) params.append('from', from);
         if (to) params.append('to', to);
-        const response = await apiClient.get(`/expenses/store/${storeId}?${params.toString()}`);
+        const response = await apiClient.get(`/api/expenses/store/${storeId}?${params.toString()}`);
         return response.data;
     },
 
     async create(expense: Partial<Expense>): Promise<{ message: string; expenseId: string }> {
-        const response = await apiClient.post('/expenses', expense);
+        const response = await apiClient.post('/api/expenses', expense);
         return response.data;
     },
 
     async update(id: string, expense: Partial<Expense>): Promise<{ message: string }> {
-        const response = await apiClient.put(`/expenses/${id}`, expense);
+        const response = await apiClient.put(`/api/expenses/${id}`, expense);
         return response.data;
     },
 
     async delete(id: string): Promise<{ message: string }> {
-        const response = await apiClient.delete(`/expenses/${id}`);
+        const response = await apiClient.delete(`/api/expenses/${id}`);
         return response.data;
     }
 };

@@ -59,6 +59,21 @@ export const CustomerInput: React.FC<CustomerInputProps> = ({ storeId, onCustome
         return () => clearTimeout(debounce);
     }, [mobile, storeId]);
 
+    // Sync with selectedCustomer prop (e.g., when restoring from queue)
+    useEffect(() => {
+        if (selectedCustomer) {
+            setExistingCustomer(selectedCustomer);
+            setMobile(selectedCustomer.mobile || '');
+        } else {
+            // Only clear if we actually had an existing customer but now don't
+            // This prevents clearing the mobile input while the user is typing
+            if (existingCustomer) {
+                setExistingCustomer(null);
+                setMobile('');
+            }
+        }
+    }, [selectedCustomer]);
+
     const handleCreateCustomer = async () => {
         if (!newCustomer.name || !mobile) {
             alert('Mobile number and name are required');

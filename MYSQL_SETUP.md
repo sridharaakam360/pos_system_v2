@@ -75,7 +75,7 @@ npm start
 You should see:
 ```
 ✅ MySQL Database connected successfully
-🚀 Server running on http://localhost:3001
+🚀 Server running on https://apipostest.yugan.tech/api/
 ```
 
 **Terminal 2 - Frontend Dev Server:**

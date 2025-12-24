@@ -17,6 +17,16 @@ export const Expenses: React.FC<ExpensesProps> = ({ store }) => {
         end: new Date().toISOString().split('T')[0]
     });
 
+    // Add one day to make end date inclusive for API queries
+    const getInclusiveEndDate = (dateStr: string) => {
+        const date = new Date(dateStr);
+        date.setDate(date.getDate() + 1);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
     const [newExpense, setNewExpense] = useState<Partial<Expense>>({
         title: '',
         amount: 0,
@@ -32,7 +42,7 @@ export const Expenses: React.FC<ExpensesProps> = ({ store }) => {
     const fetchExpenses = async () => {
         setLoading(true);
         try {
-            const data = await expensesApi.getByStore(store.id, dateRange.start, dateRange.end);
+            const data = await expensesApi.getByStore(store.id, dateRange.start, getInclusiveEndDate(dateRange.end));
             setExpenses(data);
         } catch (error) {
             console.error("Failed to load expenses", error);

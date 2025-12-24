@@ -6,6 +6,8 @@ import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     BarChart, Bar, PieChart, Pie, Cell, Legend
 } from 'recharts';
+import { financialApi } from '../src/api/financial';
+import { expensesApi, Expense } from '../src/api/expenses';
 
 interface FinancialReportsProps {
     store: Store;
@@ -26,7 +28,7 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ store }) => 
     const [drillType, setDrillType] = useState<'INVOICES' | 'PRODUCTS' | 'EXPENSES'>('INVOICES');
     const [drillDownInvoices, setDrillDownInvoices] = useState<DrillDownInvoice[]>([]);
     const [drillDownProducts, setDrillDownProducts] = useState<TopProduct[]>([]);
-    const [drillDownExpenses, setDrillDownExpenses] = useState<any[]>([]); // Using any for simplicity or import Expense type
+    const [drillDownExpenses, setDrillDownExpenses] = useState<Expense[]>([]);
     const [drillLoading, setDrillLoading] = useState(false);
 
     // Filters for drill down
@@ -55,6 +57,16 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ store }) => 
         return `${year}-${month}-${day}`;
     };
 
+    // Add one day to make end date inclusive for API queries
+    const getInclusiveEndDate = (dateStr: string) => {
+        const date = new Date(dateStr);
+        date.setDate(date.getDate() + 1);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
     const [dateRange, setDateRange] = useState({
         start: getFirstDayOfMonth(),
         end: getTodayDate()
@@ -73,27 +85,28 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ store }) => 
     const fetchMainReports = async () => {
         setLoading(true);
         try {
-            const token = localStorage.getItem('auth_token');
-            const headers = { 'Authorization': `Bearer ${token}` };
-            const base = `http://localhost:3001/api/financial`;
-            const query = `?storeId=${store.id}&startDate=${dateRange.start}&endDate=${dateRange.end}`;
+            const queryParams = {
+                storeId: store.id,
+                startDate: dateRange.start,
+                endDate: getInclusiveEndDate(dateRange.end) // Add 1 day to make inclusive
+            };
 
-            // Parallel Fetching
-            const [summaryRes, trendRes, topRes, catRes, heatRes, payRes] = await Promise.all([
-                fetch(`${base}/financial-summary${query}`, { headers }),
-                fetch(`${base}/sales-trend?storeId=${store.id}&days=30`, { headers }),
-                fetch(`${base}/top-products?storeId=${store.id}&limit=5`, { headers }),
-                fetch(`${base}/category-performance${query}`, { headers }),
-                fetch(`${base}/sales-heatmap${query}`, { headers }),
-                fetch(`${base}/payment-method-stats${query}`, { headers })
+            // Parallel Fetching using centralized API client
+            const [summary, trend, top, cat, heat, pay] = await Promise.all([
+                financialApi.getSummary(queryParams),
+                financialApi.getSalesTrend({ storeId: store.id, days: 30 }),
+                financialApi.getTopProducts({ storeId: store.id, limit: 5 }),
+                financialApi.getCategoryPerformance(queryParams),
+                financialApi.getSalesHeatmap(queryParams),
+                financialApi.getPaymentMethodStats(queryParams)
             ]);
 
-            if (summaryRes.ok) setReportData(await summaryRes.json());
-            if (trendRes.ok) setSalesTrend(await trendRes.json());
-            if (topRes.ok) setTopProducts(await topRes.json());
-            if (catRes.ok) setCategoryPerf(await catRes.json());
-            if (heatRes.ok) setHeatmapData(await heatRes.json());
-            if (payRes.ok) setPaymentStats(await payRes.json());
+            setReportData(summary);
+            setSalesTrend(trend);
+            setTopProducts(top);
+            setCategoryPerf(cat);
+            setHeatmapData(heat);
+            setPaymentStats(pay);
 
         } catch (error) {
             console.error('Error fetching reports:', error);
@@ -105,40 +118,30 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ store }) => 
     const fetchDrillData = async () => {
         setDrillLoading(true);
         try {
-            const token = localStorage.getItem('auth_token');
-            const headers = { 'Authorization': `Bearer ${token}` };
-            const base = `http://localhost:3001/api/financial`;
-
             if (drillType === 'INVOICES') {
-                let url = `${base}/drill-down/invoices?storeId=${store.id}`;
-                // If specific date is selected, use that for start/end
-                if (activeFilters.specificDate) {
-                    url += `&startDate=${activeFilters.specificDate}&endDate=${activeFilters.specificDate}`;
-                } else {
-                    url += `&startDate=${dateRange.start}&endDate=${dateRange.end}`;
-                }
-                if (activeFilters.categoryId) url += `&categoryId=${activeFilters.categoryId}`;
-                if (activeFilters.paymentMethod) url += `&paymentMethod=${activeFilters.paymentMethod}`;
-
-                const res = await fetch(url, { headers });
-                if (res.ok) {
-                    const response = await res.json();
-                    // Handle paginated response
-                    setDrillDownInvoices(Array.isArray(response) ? response : response.data || []);
-                }
+                const invoices = await financialApi.getDrillDownInvoices({
+                    storeId: store.id,
+                    startDate: dateRange.start,
+                    endDate: getInclusiveEndDate(dateRange.end), // Add 1 day to make inclusive
+                    specificDate: activeFilters.specificDate,
+                    categoryId: activeFilters.categoryId,
+                    paymentMethod: activeFilters.paymentMethod
+                });
+                setDrillDownInvoices(invoices);
 
             } else if (drillType === 'PRODUCTS') {
-                let url = `${base}/top-products?storeId=${store.id}`;
-                if (activeFilters.categoryId) url += `&categoryId=${activeFilters.categoryId}`;
-                const res = await fetch(url, { headers });
-                if (res.ok) setDrillDownProducts(await res.json());
+                const products = await financialApi.getTopProducts({
+                    storeId: store.id,
+                    categoryId: activeFilters.categoryId
+                });
+                setDrillDownProducts(products);
+
             } else if (drillType === 'EXPENSES') {
-                // Use correct endpoint: /store/:storeId with from/to query params
-                const res = await fetch(`http://localhost:3001/api/expenses/store/${store.id}?from=${dateRange.start}&to=${dateRange.end}`, { headers });
-                if (res.ok) setDrillDownExpenses(await res.json());
+                const expenses = await expensesApi.getByStore(store.id, dateRange.start, getInclusiveEndDate(dateRange.end));
+                setDrillDownExpenses(expenses);
             }
         } catch (e) {
-            console.error(e);
+            console.error('Error fetching drill-down data:', e);
         } finally {
             setDrillLoading(false);
         }
@@ -390,7 +393,7 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ store }) => 
                                             {drillDownExpenses.length === 0 ? (
                                                 <tr><td colSpan={4} className="p-4 text-center text-slate-400">No expenses recorded</td></tr>
                                             ) : (
-                                                drillDownExpenses.map((exp: any) => (
+                                                drillDownExpenses.map((exp) => (
                                                     <tr key={exp.id} className="hover:bg-slate-50">
                                                         <td className="p-3 text-slate-500">{new Date(exp.expenseDate).toLocaleDateString()}</td>
                                                         <td className="p-3 font-medium">{exp.title}</td>

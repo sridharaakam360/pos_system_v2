@@ -86,10 +86,21 @@ export interface Invoice {
   taxTotal: number;
   discountTotal: number;
   grandTotal: number;
-  paymentMethod: 'CASH' | 'CARD' | 'UPI' | 'QR';
+  paymentMethod: 'CASH' | 'CARD' | 'UPI' | 'QR' | 'RAZORPAY';
   paymentStatus?: 'PENDING' | 'COMPLETED' | 'FAILED' | 'RETRY';  // Payment status tracking
   retryCount?: number;           // Number of retry attempts
   synced: boolean;
+}
+
+export interface QueuedOrder {
+  id: string;
+  items: CartItem[];
+  customer: Customer | null;
+  timestamp: string;
+  subtotal: number;
+  taxTotal: number;
+  discountTotal: number;
+  total: number;
 }
 
 export type ViewMode = 'SUPER_ADMIN' | 'STORE_ADMIN' | 'POS' | 'PROFILE';

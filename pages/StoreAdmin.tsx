@@ -123,6 +123,17 @@ export const StoreAdmin: React.FC<StoreAdminProps> = ({
   };
 
   const openProductModal = (product?: Product) => {
+    // Check if categories exist before opening modal for new product
+    if (!product && categories.length === 0) {
+      const confirmed = confirm(
+        'No categories found! You need to create at least one category before adding products.\n\nWould you like to go to the Categories tab now?'
+      );
+      if (confirmed) {
+        setActiveTab('CATEGORIES');
+      }
+      return;
+    }
+
     if (product) {
       setEditingProduct(product);
       setCurrentProduct({ ...product });

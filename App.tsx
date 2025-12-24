@@ -6,7 +6,7 @@ import { StoreAdmin } from './pages/StoreAdmin';
 import { POS } from './pages/POS';
 import { Profile } from './pages/Profile';
 import { Store, Category, Product, Invoice, ViewMode, User, GlobalSettings } from './types';
-import { INITIAL_STORES, INITIAL_CATEGORIES, INITIAL_PRODUCTS, INITIAL_INVOICES, INITIAL_GLOBAL_SETTINGS } from './constants';
+import { INITIAL_GLOBAL_SETTINGS } from './constants';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { storesApi } from './src/api/stores';
 import { authApi } from './src/api/auth';
@@ -19,13 +19,13 @@ const App = () => {
   // Global Settings
   const [globalSettings, setGlobalSettings] = useLocalStorage<GlobalSettings>('unibill_settings', INITIAL_GLOBAL_SETTINGS);
 
-  // Global State with Persistence
-  const [stores, setStores] = useLocalStorage<Store[]>('unibill_stores', INITIAL_STORES);
-  const [categories, setCategories] = useLocalStorage<Category[]>('unibill_categories', INITIAL_CATEGORIES);
-  const [products, setProducts] = useLocalStorage<Product[]>('unibill_products', INITIAL_PRODUCTS);
+  // Global State with Persistence - Start with empty arrays, load from database
+  const [stores, setStores] = useLocalStorage<Store[]>('unibill_stores', []);
+  const [categories, setCategories] = useLocalStorage<Category[]>('unibill_categories', []);
+  const [products, setProducts] = useLocalStorage<Product[]>('unibill_products', []);
 
-  // Invoices - Logic depends on Data Source
-  const [invoices, setInvoices] = useState<Invoice[]>(INITIAL_INVOICES);
+  // Invoices - Load from Database
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
 
   // Auth State
   const [currentUser, setCurrentUser] = useLocalStorage<User | null>('unibill_user', null);
@@ -41,7 +41,7 @@ const App = () => {
   // Global guard to prevent double-fetching on HMR or remounts
   const dataLoadedRef = React.useRef(false);
 
-  // --- Data Synchronization Logic ---
+  // --- Data Synchronization Logic (after login) ---
   const refreshData = React.useCallback(async () => {
     try {
       const token = localStorage.getItem('auth_token');
@@ -105,8 +105,12 @@ const App = () => {
   const storeInvoices = invoices.filter(i => i.storeId === activeStoreId);
 
   // --- Auth Handlers ---
-  const handleLogin = (user: User) => {
+  const handleLogin = async (user: User) => {
     setCurrentUser(user);
+
+    // Immediately fetch all data from database after login
+    await refreshData();
+
     if (user.role === 'SUPER_ADMIN') {
       setCurrentView('SUPER_ADMIN');
       setActiveStoreId(null);
@@ -362,7 +366,7 @@ const App = () => {
   };
 
   if (!currentUser) {
-    return <Login stores={stores} onLogin={handleLogin} />;
+    return <Login onLogin={handleLogin} />;
   }
 
   return (

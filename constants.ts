@@ -2,7 +2,7 @@ import { Currency, Store, Category, Product, Invoice, GlobalSettings } from './t
 
 export const INITIAL_GLOBAL_SETTINGS: GlobalSettings = {
   dataSource: 'MYSQL_API',
-  mysqlApiUrl: 'http://localhost:3001/api',
+  mysqlApiUrl: 'https://apipostest.yugan.tech/api',
   defaultTaxPresets: [0, 5, 12, 18, 28]
 };
 
